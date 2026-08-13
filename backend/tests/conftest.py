@@ -36,6 +36,25 @@ def fast_llm_retries():
     llm.MAX_RETRIES = 3
 
 
+@pytest_asyncio.fixture(autouse=True)
+def stub_llm(monkeypatch):
+    """Keep stream tests hermetic: fail fast instead of hitting real providers
+    (api.openai.com or a local Ollama), which makes results network-dependent."""
+    from app.services.llm import LLMProvider
+
+    class _FailingLLM(LLMProvider):
+        async def complete(self, messages):
+            raise RuntimeError("stub")
+
+        async def stream(self, messages):
+            if False:  # pragma: no cover - makes this an async generator
+                yield None
+            raise RuntimeError("stub")
+
+    monkeypatch.setattr("app.api.chat.get_provider", lambda: _FailingLLM())
+    yield
+
+
 @pytest_asyncio.fixture
 async def client():
     async with AsyncClient(

@@ -28,11 +28,11 @@ export default function MessageBubble({ message, isLast }) {
   };
 
   return (
-    <div className={`bubble-row ${isUser ? "user" : "assistant"}`}>
-      <div className="bubble">
-        <div className="bubble-content">{message.content}</div>
-        <div className="bubble-meta">
-          <span className="time">{time}</span>
+    <div className={`msg-row ${isUser ? "user" : "assistant"}`}>
+      {!isUser && <div className="assistant-avatar">AI</div>}
+      <div className="msg-content">
+        <div className="msg-text">{message.content}</div>
+        <div className="msg-meta">
           {!isUser && message.id && isLast && (
             <span className="feedback">
               {feedback === null ? (
@@ -74,6 +74,7 @@ export default function MessageBubble({ message, isLast }) {
               )}
             </span>
           )}
+          <span className="time">{time}</span>
         </div>
       </div>
     </div>

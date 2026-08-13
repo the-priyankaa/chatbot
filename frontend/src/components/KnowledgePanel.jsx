@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import client from "../api/client";
 
-export default function KnowledgePanel({ onClose }) {
+export default function KnowledgePanel() {
   const [documents, setDocuments] = useState([]);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
@@ -58,7 +58,7 @@ export default function KnowledgePanel({ onClose }) {
     try {
       const { data } = await client.post("/knowledge/search", {
         query: query.trim(),
-        top_k: 5,
+        top_k: 3,
       });
       setResults(data);
     } catch {
@@ -69,28 +69,26 @@ export default function KnowledgePanel({ onClose }) {
   };
 
   return (
-    <aside className="knowledge-panel">
-      <div className="kb-header">
-        <h3>Knowledge base</h3>
-        <button
-          className="kb-close"
-          onClick={onClose}
-          aria-label="Close knowledge base"
-        >
-          &#215;
-        </button>
-      </div>
+    <>
       <p className="kb-hint">
-        Upload .txt / .md files. The chatbot retrieves relevant chunks when
-        answering.
+        Upload .txt / .md files to let the chatbot answer from your own content.
       </p>
 
       <label className="upload-btn">
         {busy ? "Processing..." : "Upload document"}
-        <input type="file" accept=".txt,.md,.rst,.csv,.json,.html" onChange={upload} hidden />
+        <input
+          type="file"
+          accept=".txt,.md,.rst,.csv,.json,.html"
+          onChange={upload}
+          hidden
+        />
       </label>
 
-      {msg && <div className={`banner banner-${msg.type}`}>{msg.text}</div>}
+      {msg && (
+        <div className={`banner banner-${msg.type}`} style={{ padding: "8px 10px" }}>
+          {msg.text}
+        </div>
+      )}
 
       <div className="doc-list">
         {documents.length === 0 && <p className="empty-hint">No documents yet</p>}
@@ -130,6 +128,6 @@ export default function KnowledgePanel({ onClose }) {
           ))}
         </div>
       )}
-    </aside>
+    </>
   );
 }

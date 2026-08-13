@@ -4,6 +4,11 @@ const client = axios.create({ baseURL: "/api" });
 
 let refreshPromise = null;
 
+function clearSessionTokens() {
+  localStorage.removeItem("access_token");
+  localStorage.removeItem("refresh_token");
+}
+
 client.interceptors.request.use((config) => {
   const token = localStorage.getItem("access_token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
@@ -18,7 +23,7 @@ client.interceptors.response.use(
       original._retry = true;
       const refreshToken = localStorage.getItem("refresh_token");
       if (!refreshToken) {
-        localStorage.clear();
+        clearSessionTokens();
         window.dispatchEvent(new Event("auth-expired"));
         return Promise.reject(error);
       }
@@ -34,7 +39,7 @@ client.interceptors.response.use(
         return client(original);
       } catch (refreshError) {
         refreshPromise = null;
-        localStorage.clear();
+        clearSessionTokens();
         window.dispatchEvent(new Event("auth-expired"));
         return Promise.reject(refreshError);
       }

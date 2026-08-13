@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import client from "../api/client";
 
 const ChatContext = createContext(null);
@@ -10,6 +10,9 @@ export function ChatProvider({ children }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [streaming, setStreaming] = useState(false);
+  const abortRef = useRef(null);
+  const busyRef = useRef(false);
+  const streamSessionRef = useRef(0);
 
   const loadConversations = useCallback(async () => {
     try {
@@ -31,6 +34,7 @@ export function ChatProvider({ children }) {
 
   const selectConversation = useCallback(
     async (id) => {
+      streamSessionRef.current += 1;
       setActiveId(id);
       setError(null);
       await loadMessages(id);
@@ -40,15 +44,28 @@ export function ChatProvider({ children }) {
 
   const sendMessage = useCallback(
     async (text, title) => {
+      if (busyRef.current) return;
+      busyRef.current = true;
       setError(null);
       setLoading(true);
       setStreaming(true);
 
+      const session = streamSessionRef.current;
+      const tempId = `tmp-${Date.now()}`;
       const userMsg = { role: "user", content: text, created_at: new Date().toISOString() };
-      setMessages((prev) => [...prev, userMsg]);
+      const assistantMsg = {
+        role: "assistant",
+        content: "",
+        id: tempId,
+        created_at: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, userMsg, assistantMsg]);
 
-      const assistantMsg = { role: "assistant", content: "", created_at: new Date().toISOString() };
-      setMessages((prev) => [...prev, assistantMsg]);
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      let convId = activeId;
+      const streamActive = () => streamSessionRef.current === session;
 
       try {
         const resp = await fetch("/api/chat/stream", {
@@ -62,6 +79,7 @@ export function ChatProvider({ children }) {
             conversation_id: activeId || null,
             title: title || null,
           }),
+          signal: controller.signal,
         });
 
         if (!resp.ok || !resp.body) throw new Error(`HTTP ${resp.status}`);
@@ -69,18 +87,21 @@ export function ChatProvider({ children }) {
         const reader = resp.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
-        let convId = activeId;
-        let full = "";
 
         const updateAssistant = (delta) => {
-          setMessages((prev) => {
-            const next = [...prev];
-            next[next.length - 1] = {
-              ...next[next.length - 1],
-              content: next[next.length - 1].content + delta,
-            };
-            return next;
-          });
+          if (!streamActive()) return;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === tempId ? { ...m, content: m.content + delta } : m
+            )
+          );
+        };
+
+        const setAssistantId = (id) => {
+          if (!streamActive() || !id) return;
+          setMessages((prev) =>
+            prev.map((m) => (m.id === tempId ? { ...m, id } : m))
+          );
         };
 
         while (true) {
@@ -99,28 +120,43 @@ export function ChatProvider({ children }) {
             if (event === "start") {
               const parsed = JSON.parse(dataLine);
               convId = parsed.conversation_id;
-              setActiveId(parsed.conversation_id);
+              if (streamActive()) setActiveId(parsed.conversation_id);
             } else if (event === "token") {
               const parsed = JSON.parse(dataLine);
-              full += parsed.text;
               updateAssistant(parsed.text);
-            } else if (event === "error") {
+            } else if (event === "done") {
               const parsed = JSON.parse(dataLine);
-              updateAssistant(parsed.text || dataLine);
-              setError(parsed.text || "Request failed");
+              setAssistantId(parsed.message_id);
+            } else if (event === "error") {
+              let text = dataLine;
+              try {
+                text = JSON.parse(dataLine).text || text;
+              } catch {
+                /* keep raw text */
+              }
+              updateAssistant(text);
+              setError(text || "Request failed");
             }
           }
         }
-        if (convId) setActiveId(convId);
+        if (convId && streamActive()) setActiveId(convId);
         await loadConversations();
       } catch (err) {
-        setError(err.message || "Network error while contacting the AI service.");
-        setMessages((prev) => {
-          const next = [...prev];
-          next[next.length - 1].content += "\n[Error: failed to reach the AI service]";
-          return next;
-        });
+        if (err.name === "AbortError") {
+          await loadConversations();
+        } else {
+          setError(err.message || "Network error while contacting the AI service.");
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === tempId
+                ? { ...m, content: m.content + "\n[Error: failed to reach the AI service]" }
+                : m
+            )
+          );
+        }
       } finally {
+        abortRef.current = null;
+        busyRef.current = false;
         setLoading(false);
         setStreaming(false);
       }
@@ -128,7 +164,12 @@ export function ChatProvider({ children }) {
     [activeId, loadConversations]
   );
 
+  const stopStreaming = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
   const newChat = useCallback(() => {
+    streamSessionRef.current += 1;
     setActiveId(null);
     setMessages([]);
     setError(null);
@@ -170,6 +211,7 @@ export function ChatProvider({ children }) {
         setError,
         selectConversation,
         sendMessage,
+        stopStreaming,
         newChat,
         deleteConversation,
         exportConversation,

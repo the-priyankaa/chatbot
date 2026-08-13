@@ -57,14 +57,22 @@ async def search_chunks(
         return []
 
     def _compute() -> list[tuple[object, float]]:
-        vectors = []
+        query_dim = len(query_vec)
+        normalized: list[np.ndarray] = []
         for row in rows:
             try:
-                arr = np.frombuffer(row[0].embedding, dtype="float32")
-                vectors.append(arr)
+                vec = np.frombuffer(row[0].embedding, dtype="float32")
             except Exception:  # noqa: BLE001
-                vectors.append(np.zeros(384, dtype="float32"))
-        scores = cosine_similarity(query_vec, vectors)
+                vec = np.zeros(query_dim, dtype="float32")
+            if vec.size != query_dim:
+                if vec.size > query_dim:
+                    vec = vec[:query_dim]
+                else:
+                    padded = np.zeros(query_dim, dtype="float32")
+                    padded[: vec.size] = vec
+                    vec = padded
+            normalized.append(vec)
+        scores = cosine_similarity(query_vec, normalized)
         return list(zip(rows, scores.tolist()))
 
     scored = await asyncio.to_thread(_compute)

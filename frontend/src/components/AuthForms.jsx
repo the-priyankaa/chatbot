@@ -33,9 +33,12 @@ export default function AuthForms() {
   return (
     <div className="auth-wrap">
       <div className="auth-card">
-        <h1>AI Chatbot</h1>
+        <div className="auth-logo">AI</div>
+        <h1>{mode === "login" ? "Welcome back" : "Create your account"}</h1>
         <p className="auth-sub">
-          {mode === "login" ? "Sign in to continue" : "Create an account"}
+          {mode === "login"
+            ? "Sign in to continue chatting"
+            : "Join AI Chatbot to start a conversation"}
         </p>
 
         {error && <div className="banner banner-error">{error}</div>}
@@ -80,13 +83,31 @@ export default function AuthForms() {
             autoComplete={mode === "login" ? "current-password" : "new-password"}
           />
           <button type="submit" disabled={busy}>
-            {busy ? "Please wait..." : mode === "login" ? "Sign in" : "Create account"}
+            {busy
+              ? "Please wait..."
+              : mode === "login"
+                ? "Sign in"
+                : "Create account"}
           </button>
         </form>
 
-        <button className="link-btn" onClick={switchMode}>
-          {mode === "login" ? "Need an account? Register" : "Have an account? Sign in"}
-        </button>
+        <p className="switch-link">
+          {mode === "login" ? (
+            <>
+              No account?{" "}
+              <button className="link-btn" onClick={switchMode}>
+                Register
+              </button>
+            </>
+          ) : (
+            <>
+              Have an account?{" "}
+              <button className="link-btn" onClick={switchMode}>
+                Sign in
+              </button>
+            </>
+          )}
+        </p>
       </div>
     </div>
   );

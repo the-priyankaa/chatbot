@@ -1,7 +1,8 @@
 export default function TypingIndicator() {
   return (
-    <div className="bubble-row assistant">
-      <div className="bubble typing-bubble">
+    <div className="typing-row">
+      <div className="assistant-avatar">AI</div>
+      <div className="typing-dots">
         <span className="dot" />
         <span className="dot" />
         <span className="dot" />

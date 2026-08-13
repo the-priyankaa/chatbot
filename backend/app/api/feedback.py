@@ -74,7 +74,7 @@ async def get_stats(user: CurrentUser, db: DbDep) -> dict:
 
 
 @router.get("/admin/stats")
-async def get_global_stats(db: DbDep) -> dict:
+async def get_global_stats(user: CurrentUser, db: DbDep) -> dict:
     users = (await db.execute(select(func.count(User.id)))).scalar_one()
     convs = (await db.execute(select(func.count(Conversation.id)))).scalar_one()
     msgs = (await db.execute(select(func.count(Message.id)))).scalar_one()

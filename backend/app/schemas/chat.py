@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ConversationCreate(BaseModel):
@@ -28,7 +28,7 @@ class MessageOut(BaseModel):
 
 class ChatRequest(BaseModel):
     conversation_id: str | None = None
-    message: str = ...  # noqa: A003
+    message: str = Field(min_length=1, max_length=4000)  # noqa: A003
     title: str | None = None
 
 

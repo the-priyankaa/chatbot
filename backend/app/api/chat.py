@@ -1,13 +1,14 @@
 import json
 import time
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterable, Iterable
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
 from ..config import settings
 from ..core.logging import logger
+from ..core.ratelimit import limiter
 from ..core.security import utcnow
 from ..models import Conversation, Message
 from ..schemas.chat import (
@@ -24,6 +25,8 @@ from ..services.nlu import detect_intent, detect_sentiment
 from ..services.rag import build_kb_instruction, retrieve_context
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+_RATE = f"{settings.rate_limit_per_minute}/minute"
 
 
 @router.get("/conversations", response_model=list[ConversationOut])
@@ -99,11 +102,13 @@ async def export_conversation(
 
 
 @router.post("/stream")
-async def stream_chat(payload: ChatRequest, user: CurrentUser, db: DbDep):
+@limiter.limit(_RATE)
+async def stream_chat(request: Request, payload: ChatRequest, user: CurrentUser, db: DbDep):
     blocked = moderate_input(payload.message)
     if blocked:
         return StreamingResponse(
-            _sse([{"type": "error", "data": blocked}]), media_type="text/event-stream"
+            _sse([{"type": "error", "data": json.dumps({"text": blocked})}]),
+            media_type="text/event-stream",
         )
 
     conv_id = payload.conversation_id
@@ -140,10 +145,11 @@ async def _stream_llm_response(
     context: list[SearchHit] = []
     intent = detect_intent(user_msg.content)
     sentiment = detect_sentiment(user_msg.content)
-    try:
-        context = await retrieve_context(db, user_msg.content, user_id)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("KB retrieval failed: %s", exc)
+    if intent != "greeting":
+        try:
+            context = await retrieve_context(db, user_msg.content, user_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("KB retrieval failed: %s", exc)
 
     system_prompt = settings.llm_system_prompt
     kb_instruction = build_kb_instruction(context)
@@ -177,30 +183,41 @@ async def _stream_llm_response(
         }
 
     buffer: list[str] = []
+    stream_error: str | None = None
+    completed_normally = False
+    assistant_msg: Message | None = None
     try:
-        provider = get_provider()
-        async for delta in provider.stream(llm_messages):
-            buffer.append(delta)
-            yield {"type": "token", "data": json.dumps({"text": delta})}
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("LLM stream error")
-        yield {
-            "type": "error",
-            "data": json.dumps(
-                {"text": "Sorry, the AI service is unavailable right now. Please try again."}
-            ),
-        }
+        try:
+            provider = get_provider()
+            async for delta in provider.stream(llm_messages):
+                buffer.append(delta)
+                yield {"type": "token", "data": json.dumps({"text": delta})}
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("LLM stream error")
+            stream_error = (
+                "Sorry, the AI service is unavailable right now. Please try again."
+            )
+            yield {
+                "type": "error",
+                "data": json.dumps({"text": stream_error}),
+            }
 
-    full = moderate_output("".join(buffer))
-    assistant_msg = Message(
-        conversation_id=conv.id, role="assistant", content=full
-    )
-    db.add(assistant_msg)
-    conv.title = (
-        conv.title if conv.title and conv.title != "New chat" else user_msg.content[:40]
-    )
-    conv.updated_at = utcnow()
-    await db.commit()
+        content = stream_error or moderate_output("".join(buffer))
+        if content:
+            assistant_msg = await _persist_assistant_reply(db, conv, user_msg, content)
+        completed_normally = True
+    finally:
+        # Client disconnected mid-stream (GeneratorExit): persist whatever we have
+        # so the partial reply and conversation title are not lost.
+        if not completed_normally and (buffer or stream_error):
+            content = stream_error or moderate_output("".join(buffer))
+            if content:
+                try:
+                    assistant_msg = await _persist_assistant_reply(
+                        db, conv, user_msg, content
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception("Failed to persist partial reply")
 
     latency_ms = round((time.perf_counter() - start) * 1000, 1)
     logger.info(
@@ -212,7 +229,29 @@ async def _stream_llm_response(
         len(context),
         latency_ms,
     )
-    yield {"type": "done", "data": json.dumps({"latency_ms": latency_ms})}
+    yield {
+        "type": "done",
+        "data": json.dumps(
+            {
+                "latency_ms": latency_ms,
+                "message_id": assistant_msg.id if assistant_msg else None,
+            }
+        ),
+    }
+
+
+async def _persist_assistant_reply(
+    db, conv: Conversation, user_msg: Message, content: str
+) -> Message:
+    assistant_msg = Message(conversation_id=conv.id, role="assistant", content=content)
+    db.add(assistant_msg)
+    title_text = " ".join(user_msg.content.split())
+    conv.title = (
+        conv.title if conv.title and conv.title != "New chat" else title_text[:40]
+    )
+    conv.updated_at = utcnow()
+    await db.commit()
+    return assistant_msg
 
 
 async def _get_owned_conversation(
@@ -226,6 +265,12 @@ async def _get_owned_conversation(
     return conv
 
 
-async def _sse(events: AsyncGenerator[dict, None]) -> AsyncGenerator[str, None]:
-    async for event in events:
-        yield f"event: {event['type']}\ndata: {event.get('data') or ''}\n\n"
+async def _sse(
+    events: Iterable[dict] | AsyncIterable[dict],
+) -> AsyncGenerator[str, None]:
+    if isinstance(events, AsyncIterable):
+        async for event in events:
+            yield f"event: {event['type']}\ndata: {event.get('data') or ''}\n\n"
+    else:
+        for event in events:
+            yield f"event: {event['type']}\ndata: {event.get('data') or ''}\n\n"

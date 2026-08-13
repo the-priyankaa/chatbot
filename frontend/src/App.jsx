@@ -3,40 +3,44 @@ import { useAuth } from "./context/AuthContext.jsx";
 import { ChatProvider } from "./context/ChatContext.jsx";
 import AuthForms from "./components/AuthForms.jsx";
 import ChatWindow from "./components/ChatWindow.jsx";
-import KnowledgePanel from "./components/KnowledgePanel.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 
 function Shell() {
   const { user, loading } = useAuth();
-  const [showKb, setShowKb] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
-    document.body.classList.toggle("menu-open", sidebarOpen || showKb);
+    document.body.classList.toggle("menu-open", sidebarOpen);
     return () => document.body.classList.remove("menu-open");
-  }, [sidebarOpen, showKb]);
+  }, [sidebarOpen]);
 
   if (loading) return <div className="boot">Loading...</div>;
 
   if (!user) return <AuthForms />;
 
+  const layoutClass = [
+    "layout",
+    sidebarOpen ? "sidebar-open" : "",
+    sidebarCollapsed ? "sidebar-collapsed" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <ChatProvider>
-      <div className={`layout ${sidebarOpen ? "sidebar-open" : ""}`}>
+      <div className={layoutClass}>
         {sidebarOpen && <div className="backdrop" onClick={() => setSidebarOpen(false)} />}
         <Sidebar
           onNavigate={() => setSidebarOpen(false)}
           onToggle={() => setSidebarOpen((v) => !v)}
         />
-        <ChatWindow onToggleSidebar={() => setSidebarOpen((v) => !v)} />
-        {showKb ? <KnowledgePanel onClose={() => setShowKb(false)} /> : null}
-        <button
-          className="kb-toggle"
-          onClick={() => setShowKb((v) => !v)}
-          title="Toggle knowledge base"
-        >
-          {showKb ? "Hide KB" : "KB"}
-        </button>
+        <ChatWindow
+          onToggleSidebar={() => {
+            if (window.innerWidth <= 860) setSidebarOpen((v) => !v);
+            else setSidebarCollapsed((v) => !v);
+          }}
+        />
       </div>
     </ChatProvider>
   );

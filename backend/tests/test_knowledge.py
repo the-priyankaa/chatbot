@@ -7,6 +7,53 @@ from app.services.moderation import is_toxic, moderate_input, moderate_output
 from app.services.nlu import detect_intent, detect_sentiment
 
 
+@pytest.mark.asyncio
+async def test_search_top_k_rejected(auth_client):
+    res = await auth_client.post(
+        "/api/knowledge/search", json={"query": "x", "top_k": 500}
+    )
+    assert res.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_search_handles_embedding_dimension_mismatch(auth_client):
+    import numpy as np
+    from sqlalchemy import select
+
+    from app.database import SessionLocal
+    from app.models import Document, DocumentChunk, User
+    from app.services.embeddings import search_chunks
+
+    async with SessionLocal() as db:
+        user = (
+            await db.execute(select(User).where(User.username == "tester"))
+        ).scalar_one()
+        doc = Document(
+            user_id=user.id, filename="old.txt", content="old model", chunk_count=1
+        )
+        db.add(doc)
+        await db.flush()
+        db.add(
+            DocumentChunk(
+                document_id=doc.id,
+                index=0,
+                content="legacy chunk",
+                embedding=np.array([1.0, 2.0, 3.0], dtype="float32").tobytes(),
+            )
+        )
+        await db.commit()
+
+        longer = np.array([1.0, 2.0, 3.0, 4.0], dtype="float32")
+        hits = await search_chunks(db, longer, user.id, 4)
+        assert isinstance(hits, list)
+        assert hits[0][1] >= -1.0
+
+        shorter = np.array([1.0, 2.0], dtype="float32")
+        hits = await search_chunks(db, shorter, user.id, 4)
+        assert isinstance(hits, list)
+        assert hits[0][1] >= -1.0
+
+
 class TestChunking:
     def test_short_text_single_chunk(self):
         assert _chunk_text("hello world", 700, 80) == ["hello world"]

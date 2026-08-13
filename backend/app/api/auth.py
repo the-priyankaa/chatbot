@@ -1,9 +1,11 @@
 from datetime import timedelta
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from ..config import settings
+from ..core.ratelimit import limiter
 from ..core.security import (
     create_access_token,
     create_refresh_token,
@@ -23,9 +25,12 @@ from ..services.auth import (
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+_RATE = f"{settings.rate_limit_per_minute}/minute"
+
 
 @router.post("/register", response_model=TokenPair, status_code=status.HTTP_201_CREATED)
-async def register(payload: UserCreate, db: DbDep) -> TokenPair:
+@limiter.limit(_RATE)
+async def register(request: Request, payload: UserCreate, db: DbDep) -> TokenPair:
     existing = (
         await db.execute(
             select(User).where(
@@ -39,7 +44,13 @@ async def register(payload: UserCreate, db: DbDep) -> TokenPair:
         )
 
     user = create_user(db, payload.username, payload.email, payload.password)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Username or email taken"
+        ) from None
 
     access, _ = create_access_token(user.id)
     refresh, _ = create_refresh_token(user.id)
@@ -49,12 +60,19 @@ async def register(payload: UserCreate, db: DbDep) -> TokenPair:
         hash_refresh_token(refresh),
         utcnow() + timedelta(days=settings.refresh_token_expire_days),
     )
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Username or email taken"
+        ) from None
     return TokenPair(access_token=access, refresh_token=refresh)
 
 
 @router.post("/login", response_model=TokenPair)
-async def login(payload: UserLogin, db: DbDep) -> TokenPair:
+@limiter.limit(_RATE)
+async def login(request: Request, payload: UserLogin, db: DbDep) -> TokenPair:
     user = await authenticate_user(db, payload.identifier, payload.password)
     if user is None:
         raise HTTPException(
@@ -76,7 +94,8 @@ async def login(payload: UserLogin, db: DbDep) -> TokenPair:
 
 
 @router.post("/refresh", response_model=TokenPair)
-async def refresh(payload: RefreshRequest, db: DbDep) -> TokenPair:
+@limiter.limit(_RATE)
+async def refresh(request: Request, payload: RefreshRequest, db: DbDep) -> TokenPair:
     user = await consume_refresh_token(db, payload.refresh_token)
     access, _ = create_access_token(user.id)
     refresh, _ = create_refresh_token(user.id)

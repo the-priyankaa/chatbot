@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DocumentOut(BaseModel):
@@ -13,8 +13,8 @@ class DocumentOut(BaseModel):
 
 
 class SearchRequest(BaseModel):
-    query: str
-    top_k: int = 4
+    query: str = Field(min_length=1)
+    top_k: int = Field(default=4, ge=1, le=20)
 
 
 class SearchHit(BaseModel):

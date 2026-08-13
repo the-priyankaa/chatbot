@@ -2,11 +2,13 @@ import asyncio
 import re
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, UploadFile, status
+from fastapi import APIRouter, HTTPException, Request, UploadFile, status
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 
 from ..config import settings
 from ..core.logging import logger
+from ..core.ratelimit import limiter
 from ..models import Document, DocumentChunk
 from ..schemas.knowledge import DocumentOut, SearchHit, SearchRequest
 from ..services.auth import CurrentUser, DbDep
@@ -14,13 +16,16 @@ from ..services.embeddings import embed_query, embed_texts, search_chunks
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 
+_RATE = f"{settings.rate_limit_per_minute}/minute"
+
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024  # 2 MB
 SUPPORTED_EXT = {".txt", ".md", ".rst", ".csv", ".json", ".html"}
 
 
 @router.post("/ingest", response_model=DocumentOut)
+@limiter.limit(_RATE)
 async def ingest_document(
-    file: UploadFile, user: CurrentUser, db: DbDep
+    request: Request, file: UploadFile, user: CurrentUser, db: DbDep
 ) -> Document:
     filename = Path(file.filename or "document.txt").name
     if Path(filename).suffix.lower() not in SUPPORTED_EXT:
@@ -72,7 +77,14 @@ async def ingest_document(
                 embedding=vec.tobytes(),
             )
         )
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A document with this filename already exists",
+        ) from None
     await db.refresh(doc)
     logger.info("ingested doc=%s user=%s chunks=%s", filename, user.id, len(chunks))
     return doc
@@ -100,7 +112,10 @@ async def delete_document(document_id: str, user: CurrentUser, db: DbDep) -> Non
 
 
 @router.post("/search", response_model=list[SearchHit])
-async def search(payload: SearchRequest, user: CurrentUser, db: DbDep) -> list[SearchHit]:
+@limiter.limit(_RATE)
+async def search(
+    request: Request, payload: SearchRequest, user: CurrentUser, db: DbDep
+) -> list[SearchHit]:
     query_vec = await embed_query(payload.query)
     hits = await search_chunks(db, query_vec, user.id, payload.top_k)
     return [
