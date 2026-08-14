@@ -1,5 +1,6 @@
 import { useState } from "react";
 import client from "../api/client";
+import logo from "../assets/logo.png";
 
 function CopyIcon() {
   return (
@@ -65,7 +66,7 @@ export default function MessageBubble({ message, isLast }) {
 
   return (
     <div className={`msg-row ${isUser ? "user" : "assistant"}`}>
-      {!isUser && <div className="assistant-avatar">AI</div>}
+      {!isUser && <img className="assistant-avatar" src={logo} alt="AI" />}
       <div className="msg-content">
         <div className="msg-text">{message.content}</div>
         <div className="msg-meta">

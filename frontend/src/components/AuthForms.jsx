@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
+import logo from "../assets/logo.png";
 
 export default function AuthForms() {
   const { login, register } = useAuth();
@@ -33,7 +34,7 @@ export default function AuthForms() {
   return (
     <div className="auth-wrap">
       <div className="auth-card">
-        <div className="auth-logo">AI</div>
+        <img className="auth-logo" src={logo} alt="AI Chatbot" />
         <h1>{mode === "login" ? "Welcome back" : "Create your account"}</h1>
         <p className="auth-sub">
           {mode === "login"

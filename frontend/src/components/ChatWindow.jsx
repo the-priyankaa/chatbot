@@ -4,6 +4,7 @@ import { useChat } from "../context/ChatContext.jsx";
 import MessageBubble from "./MessageBubble.jsx";
 import MessageInput from "./MessageInput.jsx";
 import TypingIndicator from "./TypingIndicator.jsx";
+import logo from "../assets/logo.png";
 
 const SUGGESTIONS = [
   "What can you help me with?",
@@ -70,7 +71,7 @@ export default function ChatWindow({ onToggleSidebar }) {
       <div className="messages" ref={scrollRef}>
         {messages.length === 0 && !loading ? (
           <div className="welcome">
-            <div className="welcome-brand">AI</div>
+            <img className="welcome-brand" src={logo} alt="AI Chatbot" />
             <h1>How can I help you today?</h1>
             <p>Ask anything, or get answers grounded in your knowledge base.</p>
             <div className="suggestion-grid">

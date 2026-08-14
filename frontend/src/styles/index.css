@@ -113,14 +113,19 @@ button {
   width: 56px;
   height: 56px;
   border-radius: 14px;
-  background: var(--brand);
-  color: #fff;
+  background: var(--panel);
+  border: 1px solid var(--border);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 28px;
-  font-weight: 700;
+  object-fit: cover;
+  box-sizing: border-box;
   margin-bottom: 16px;
+}
+
+[data-theme="dark"] .auth-logo {
+  background: var(--brand);
+  border: none;
 }
 
 .auth-card h1 {
@@ -363,7 +368,7 @@ button {
 .upload-btn {
   display: block;
   text-align: center;
-  background: var(--accent);
+  background: var(--brand);
   color: #fff;
   border: none;
   border-radius: 8px;
@@ -374,7 +379,7 @@ button {
 }
 
 .upload-btn:hover {
-  background: var(--accent-hover);
+  background: var(--brand-hover);
 }
 
 .doc-list {
@@ -437,13 +442,17 @@ button {
 }
 
 .kb-search button {
-  background: var(--accent);
+  background: var(--brand);
   color: #fff;
   border: none;
   border-radius: 8px;
   padding: 0 10px;
   font-size: 12px;
   cursor: pointer;
+}
+
+.kb-search button:hover {
+  background: var(--brand-hover);
 }
 
 .kb-results {
@@ -635,14 +644,19 @@ button {
   width: 56px;
   height: 56px;
   border-radius: 14px;
-  background: var(--brand);
-  color: #fff;
+  background: var(--panel);
+  border: 1px solid var(--border);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 26px;
-  font-weight: 700;
+  object-fit: cover;
+  box-sizing: border-box;
   margin-bottom: 18px;
+}
+
+[data-theme="dark"] .welcome-brand {
+  background: var(--brand);
+  border: none;
 }
 
 .welcome h1 {
@@ -699,14 +713,19 @@ button {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: var(--brand);
-  color: #fff;
+  background: var(--panel);
+  border: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
-  font-weight: 700;
+  object-fit: cover;
+  box-sizing: border-box;
   flex-shrink: 0;
+}
+
+[data-theme="dark"] .assistant-avatar {
+  background: var(--brand);
+  border: none;
 }
 
 .msg-content {
